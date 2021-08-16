@@ -102,7 +102,7 @@ public class DefaultEurekaServerConfig implements EurekaServerConfig {
                 EUREKA_ENVIRONMENT, TEST);
         ConfigurationManager.getConfigInstance().setProperty(
                 ARCHAIUS_DEPLOYMENT_ENVIRONMENT, env);
-
+        //eurekaPropsFile对应eureka-server
         String eurekaPropsFile = EUREKA_PROPS_FILE.get();
         try {
             // ConfigurationManager
