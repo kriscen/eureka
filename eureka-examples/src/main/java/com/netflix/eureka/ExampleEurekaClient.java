@@ -116,6 +116,7 @@ public class ExampleEurekaClient {
         }
     }
     /**
+     *
      * This will be read by server internal discovery client. We need to salience it.
      */
     private static void injectEurekaConfiguration() throws UnknownHostException {
