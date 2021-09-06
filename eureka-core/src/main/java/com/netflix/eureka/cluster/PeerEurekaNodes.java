@@ -85,6 +85,7 @@ public class PeerEurekaNodes {
                 }
         );
         try {
+            //根据eureka server地址  更新集群信息
             updatePeerEurekaNodes(resolvePeerUrls());
             Runnable peersUpdateTask = new Runnable() {
                 @Override
@@ -97,6 +98,7 @@ public class PeerEurekaNodes {
 
                 }
             };
+            //默认10分钟
             taskExecutor.scheduleWithFixedDelay(
                     peersUpdateTask,
                     serverConfig.getPeerEurekaNodesUpdateIntervalMs(),

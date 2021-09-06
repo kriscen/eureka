@@ -207,15 +207,22 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
         // Copy entire entry from neighboring DS node
         int count = 0;
 
+        //((i < serverConfig.getRegistrySyncRetries()) && (count == 0)) 重试机制
         for (int i = 0; ((i < serverConfig.getRegistrySyncRetries()) && (count == 0)); i++) {
             if (i > 0) {
                 try {
+                    /*
+                        如果第一次没有在自己本地的eureka  client中获取注册表
+                        说明自己本地的eureka client还没有从任何其他的eureka server上获取注册表
+                        所以此时重置，等待30s
+                     */
                     Thread.sleep(serverConfig.getRegistrySyncRetryWaitMs());
                 } catch (InterruptedException e) {
                     logger.warn("Interrupted during registry transfer..");
                     break;
                 }
             }
+            //将自己作为client 去 其他 server拉取注册表
             Applications apps = eurekaClient.getApplications();
             for (Application app : apps.getRegisteredApplications()) {
                 for (InstanceInfo instance : app.getInstances()) {
@@ -629,6 +636,7 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     private void replicateToPeers(Action action, String appName, String id,
                                   InstanceInfo info /* optional */,
                                   InstanceStatus newStatus /* optional */, boolean isReplication) {
+        //client 找 server 进行注册，isReplication 为 false
         Stopwatch tracer = action.getTimer().start();
         try {
             if (isReplication) {
