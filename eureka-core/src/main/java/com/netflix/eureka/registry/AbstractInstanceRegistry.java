@@ -232,6 +232,9 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                         // Since the client wants to cancel it, reduce the threshold
                         // (1
                         // for 30 seconds, 2 for a minute)
+                        /*
+                            每新增一个服务实例，期望服务实例+2(有问题，心跳时间会变动)
+                         */
                         this.expectedNumberOfRenewsPerMin = this.expectedNumberOfRenewsPerMin + 2;
                         this.numberOfRenewsPerMinThreshold =
                                 (int) (this.expectedNumberOfRenewsPerMin * serverConfig.getRenewalPercentThreshold());
@@ -614,6 +617,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     public void evict(long additionalLeaseMs) {
         logger.debug("Running the evict task");
 
+        //是否允许主动删除故障的机器->和自我保护机制相关
         if (!isLeaseExpirationEnabled()) {
             logger.debug("DS: lease expiration is currently disabled.");
             return;
@@ -628,6 +632,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             if (leaseMap != null) {
                 for (Entry<String, Lease<InstanceInfo>> leaseEntry : leaseMap.entrySet()) {
                     Lease<InstanceInfo> lease = leaseEntry.getValue();
+                    //判断过期
                     if (lease.isExpired(additionalLeaseMs) && lease.getHolder() != null) {
                         expiredLeases.add(lease);
                     }
@@ -637,6 +642,13 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
 
         // To compensate for GC pauses or drifting local time, we need to use current registry size as a base for
         // triggering self-preservation. Without that we would wipe out full registry.
+        /*
+            不能一次性摘除过多的服务实例
+            假设现在一共20个服务实例，现在6个服务实例不可用了，一次性可以摘除的服务实例
+            registrySize = 20
+            registrySizeThreshold = 20 * 0.85 = 17
+            evictionLimit = 20 - 17 = 3
+         */
         int registrySize = (int) getLocalRegistrySize();
         int registrySizeThreshold = (int) (registrySize * serverConfig.getRenewalPercentThreshold());
         int evictionLimit = registrySize - registrySizeThreshold;
@@ -645,17 +657,36 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         if (toEvict > 0) {
             logger.info("Evicting {} items (expired={}, evictionLimit={})", toEvict, expiredLeases.size(), evictionLimit);
 
+            /*
+                需要摘除的服务实例一共6个，但是最多只能摘除3个服务实例
+                下面会在留个服务实例中，随机选择三个摘除
+             */
             Random random = new Random(System.currentTimeMillis());
             for (int i = 0; i < toEvict; i++) {
                 // Pick a random item (Knuth shuffle algorithm)
                 int next = i + random.nextInt(expiredLeases.size() - i);
                 Collections.swap(expiredLeases, i, next);
+                //随机一个倒霉蛋
                 Lease<InstanceInfo> lease = expiredLeases.get(i);
 
                 String appName = lease.getHolder().getAppName();
                 String id = lease.getHolder().getId();
                 EXPIRED.increment();
                 logger.warn("DS: Registry: expired lease for {}/{}", appName, id);
+
+                /*
+                    此处未处理期望心跳数量变更
+                    synchronized (lock) {
+                        if (this.expectedNumberOfRenewsPerMin > 0) {
+                            // Since the client wants to cancel it, reduce the threshold (1 for 30 seconds, 2 for a minute)
+                            this.expectedNumberOfRenewsPerMin = this.expectedNumberOfRenewsPerMin - 2;
+                            this.numberOfRenewsPerMinThreshold =
+                                    (int) (this.expectedNumberOfRenewsPerMin * serverConfig.getRenewalPercentThreshold());
+                        }
+                    }
+                 */
+
+                //摘除服务实例
                 internalCancel(appName, id, false);
             }
         }
@@ -1255,6 +1286,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         }
         evictionTaskRef.set(new EvictionTask());
         evictionTimer.schedule(evictionTaskRef.get(),
+                //默认60s
                 serverConfig.getEvictionIntervalTimerInMs(),
                 serverConfig.getEvictionIntervalTimerInMs());
     }
@@ -1296,13 +1328,16 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
          * according to the configured cycle.
          */
         long getCompensationTimeMs() {
+            //先获取当前时间
             long currNanos = getCurrentTimeNano();
+            //上次一次EvictionTask执行时间
             long lastNanos = lastExecutionNanosRef.getAndSet(currNanos);
             if (lastNanos == 0l) {
                 return 0l;
             }
 
             long elapsedMs = TimeUnit.NANOSECONDS.toMillis(currNanos - lastNanos);
+            //获取两次执行时间差
             long compensationTime = elapsedMs - serverConfig.getEvictionIntervalTimerInMs();
             return compensationTime <= 0l ? 0l : compensationTime;
         }

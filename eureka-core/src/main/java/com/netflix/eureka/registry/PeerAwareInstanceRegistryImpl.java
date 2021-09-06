@@ -237,8 +237,10 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     public void openForTraffic(ApplicationInfoManager applicationInfoManager, int count) {
         // Renewals happen every 30 seconds and for a minute it should be a factor of 2.
         this.expectedNumberOfRenewsPerMin = count * 2;
+        //如果20个服务，乘以2，期望一分钟40个心跳
         this.numberOfRenewsPerMinThreshold =
                 (int) (this.expectedNumberOfRenewsPerMin * serverConfig.getRenewalPercentThreshold());
+        // count * 2 * 0.85
         logger.info("Got " + count + " instances from neighboring DS node");
         logger.info("Renew threshold is: " + numberOfRenewsPerMinThreshold);
         this.startupTime = System.currentTimeMillis();
@@ -480,10 +482,17 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
 
     @Override
     public boolean isLeaseExpirationEnabled() {
+        //默认true，如果改为false，关闭自我保护机制，就一直返回true，随时可以清理故障的实例
         if (!isSelfPreservationModeEnabled()) {
             // The self preservation mode is disabled, hence allowing the instances to expire.
             return true;
         }
+        /*
+            numberOfRenewsPerMinThreshold -  期望一分钟内接受心跳数
+            getNumOfRenewsInLastMin() - 上一分钟所有服务实例一共发送心跳数
+            如果上一分钟心跳数102次 > 期望的100次 就返回true - 可以清理故障的服务实例
+            如果上一分钟心跳次数太少 20次 < 期望的100次 返回false
+         */
         return numberOfRenewsPerMinThreshold > 0 && getNumOfRenewsInLastMin() > numberOfRenewsPerMinThreshold;
     }
 

@@ -108,6 +108,11 @@ public class Lease<T> {
      * @param additionalLeaseMs any additional lease time to add to the lease evaluation in ms.
      */
     public boolean isExpired(long additionalLeaseMs) {
+        /*
+            lastUpdateTimestamp 续约时间 （存在bug，导致duration * 2 的时间才会过期）
+            duration 默认90s
+            additionalLeaseMs 补偿时间
+         */
         return (evictionTimestamp > 0 || System.currentTimeMillis() > (lastUpdateTimestamp + duration + additionalLeaseMs));
     }
 
